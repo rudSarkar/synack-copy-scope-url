@@ -1,0 +1,92 @@
+name: Build Extension Packages
+
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-extensions:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-js-version: '18'
+        
+    - name: Install web-ext for Firefox packaging
+      run: npm install -g web-ext
+      
+    - name: Create build directories
+      run: |
+        mkdir -p build/chrome
+        mkdir -p build/firefox
+        mkdir -p dist
+        
+    - name: Prepare Chrome extension files
+      run: |
+        cp -r icons build/chrome/
+        cp background.js content.js popup.html popup.js build/chrome/
+        cp manifest.json build/chrome/
+        
+    - name: Prepare Firefox extension files  
+      run: |
+        cp -r icons build/firefox/
+        cp content.js build/firefox/
+        cp background_firefox.js build/firefox/
+        cp popup_firefox.html build/firefox/
+        cp popup_firefox.js build/firefox/
+        cp manifest_firefox.json build/firefox/manifest.json
+        
+    - name: Build XPI (Firefox) package
+      run: |
+        cd build/firefox
+        web-ext build --artifacts-dir ../../dist --filename extension-firefox.xpi
+        
+    - name: Install Chrome extension packaging tools
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y zip
+        
+    - name: Build CRX (Chrome) package - Create ZIP
+      run: |
+        cd build/chrome
+        zip -r ../../dist/extension-chrome.zip .
+        
+    - name: List generated files
+      run: |
+        ls -la dist/
+        file dist/*
+        
+    - name: Upload XPI artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: firefox-extension
+        path: dist/extension-firefox.xpi
+        retention-days: 30
+        
+    - name: Upload Chrome ZIP artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: chrome-extension
+        path: dist/extension-chrome.zip
+        retention-days: 30
+        
+    - name: Release packages (on tag)
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          dist/extension-firefox.xpi
+          dist/extension-chrome.zip
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
